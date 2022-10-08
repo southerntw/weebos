@@ -1,4 +1,5 @@
 global start
+extern long_mode_start
 
 section .text
 bits 32
@@ -12,12 +13,13 @@ start:
 	call setup_page_tables
 	call enable_paging
 
-	; print 'OK'
-	mov dword [0xb8000], 0x2f4b2f4f
+ 	lgdt [gdt64.pointer]
+ 	jmp gdt64.code_segment:long_mode_start
+
 	hlt	
 
 check_multiboot:
-	cmp eax 0x36d76289
+	cmp eax, 0x36d76289
 	jne .no_multiboot
 	ret
 .no_multiboot:
@@ -89,6 +91,7 @@ enable_paging:
 	; enable physical adress extension (PAE)
 	mov eax, cr4
 	or eax, 1 << 5
+	mov cr4, eax
 	
 	; enable long mode
 	mov ecx, 0xC0000080
@@ -104,6 +107,7 @@ enable_paging:
 	ret
 
 error:
+	; print "ERR: X" where X is the error code
 	mov dword [0xb8000], 0x4f524f45
 	mov dword [0xb8004], 0x4f3a4f52
 	mov dword [0xb8008], 0x4f204f20
@@ -117,7 +121,16 @@ page_table_l4:
 page_table_l3:
 	resb 4096
 page_table_l2:
-	resb 4096
+	resb 4095
 stack_bottom:
 	resb 4096 * 4			
 stack_top:
+
+section .rodata
+gdt64:
+	dq 0 ; zero entry
+.code_segment: equ $ - gdt64
+	dq (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53) ; code segment
+.pointer:
+	dw $ - gdt64 - 1 ; length
+	dq gdt64 ; address
